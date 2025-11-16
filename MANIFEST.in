@@ -1,0 +1,6 @@
+recursive-include kube_reservation *
+prune env*
+global-exclude .env
+global-exclude *.py[co]
+recursive-exclude .git *
+global-exclude __pycache__

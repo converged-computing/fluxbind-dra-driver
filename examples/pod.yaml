@@ -1,0 +1,58 @@
+# This file demonstrates the recommended pattern for requesting an ad-hoc,
+# user-defined shape with the fluxbind DRA driver.
+
+# Create a ResourceClaim to request the shape.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: cores-shape-claim
+spec:
+  devices:
+    requests:
+    - name: "shape-request"
+      exactly:
+        deviceClassName: "shape"
+        count: 1
+    config:
+      - requests:
+        - "shape-request" 
+        opaque:
+          driver: "fluxbind"
+          parameters:
+            # Request 4 CPU that are scattered
+            resources:
+            - type: "core"
+              count: 8
+              pattern: scatter
+---
+# Pod consumes the pre-created ResourceClaim by name.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fluxbind-pod
+spec:
+  # The Pod's resource request is just a reference to the claim object.
+  resourceClaims:
+  - name: pod-resources
+    resourceClaimName: cores-shape-claim
+    
+  containers:
+  - name: test-container
+    image: ubuntu:22.04
+    # This command will show the CPU affinity and environment variables
+    # set by your driver via Kubelet, then sleep.
+    command:
+      - "/bin/bash"
+      - "-c"
+      - |
+        echo "--- Container Started ---"
+        echo "Received FLUXBIND_CPUSET: $FLUXBIND_CPUSET"
+        echo "--- Verifying CPU Affinity (should be 8 cores) ---"
+        taskset -c -p 1
+        echo ""
+        echo "Pod is running. Use 'kubectl exec' to inspect further."
+        sleep infinity
+
+    resources: 
+       claims: 
+         - name: pod-resources
