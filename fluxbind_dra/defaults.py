@@ -9,5 +9,3 @@ REGISTRATION_SOCKET_PATH = (
 
 CDI_SPEC_PATH = f"/var/run/cdi/{PLUGIN_NAME}.json"
 CDI_ENVVAR_PREFIX = "FLUXBIND_CPUSET"
-NRI_SOCKET_PATH = "unix:///var/run/nri/nri.sock"
-NRI_PLUGIN_IDX = "01" # Plugins are executed in order of index. 01 is a common choice.

@@ -147,11 +147,24 @@ spec:
             nsenter -t 1 -m -u -i -n -p -- systemctl restart containerd
           fi
       containers:
+      - name: nri-sidecar
+        image: ghcr.io/converged-computing/fluxbind-dra-driver:nri
+        imagePullPolicy: Never
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: nri-plugin
+          mountPath: /var/run/nri
+        - name: fluxbind-shared
+          mountPath: /run/fluxbind
+        args:
+        - "--name=fluxbind"
+        - "--idx=01"
       - name: fluxbind
         args:
         - fluxbind-dra-driver
         - --v=4
-        image: ghcr.io/converged-computing/fluxbind-dra-driver        
+        image: ghcr.io/converged-computing/fluxbind-dra-driver
         imagePullPolicy: Never
         # imagePullPolicy: Always
         env:
@@ -181,6 +194,8 @@ spec:
           mountPath: /var/lib/kubelet/plugins_registry
         - name: nri-plugin
           mountPath: /var/run/nri
+        - name: fluxbind-shared
+          mountPath: /run/fluxbind
         - name: cdi-dir
           mountPath: /var/run/cdi
       volumes:
@@ -193,6 +208,9 @@ spec:
       - name: nri-plugin
         hostPath:
           path: /var/run/nri
+      - name: fluxbind-shared
+        hostPath:
+          path: /run/fluxbind
       - name: netns
         hostPath:
           path: /var/run/netns

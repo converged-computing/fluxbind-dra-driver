@@ -5,7 +5,7 @@
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
-  name: cores-shape-claim-8
+  name: cores-shape-claim
 spec:
   devices:
     requests:
@@ -22,19 +22,19 @@ spec:
             # Request 4 CPU that are scattered
             resources:
             - type: "core"
-              count: 8
-              pattern: scatter
+              count: 4
+              reverse: true
 ---
 # Pod consumes the pre-created ResourceClaim by name.
 apiVersion: v1
 kind: Pod
 metadata:
-  name: fluxbind-pod-8
+  name: fluxbind-pod
 spec:
   # The Pod's resource request is just a reference to the claim object.
   resourceClaims:
   - name: pod-resources
-    resourceClaimName: cores-shape-claim-8
+    resourceClaimName: cores-shape-claim
     
   containers:
   - name: test-container

@@ -27,6 +27,12 @@ Install the driver:
 kubectl apply -f install.yaml
 ```
 
+Development
+
+```bash
+kind delete cluster && make kind && make build-nri && make build-load && kubectl apply -f install.yaml
+```
+
 ## License
 
 DevTools is distributed under the terms of the MIT license.

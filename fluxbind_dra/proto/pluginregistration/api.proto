@@ -49,4 +49,3 @@ service Registration {
 	rpc GetInfo(InfoRequest) returns (PluginInfo) {}
 	rpc NotifyRegistrationStatus(RegistrationStatus) returns (RegistrationStatusResponse) {}
 }
-

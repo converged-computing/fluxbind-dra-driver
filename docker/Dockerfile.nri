@@ -1,0 +1,10 @@
+FROM golang:1.25-alpine AS builder
+ENV CGO_ENABLED=0 GOOS=linux
+
+WORKDIR /code
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN mkdir -p /var/run/nri /run/fluxbind
+RUN go build -ldflags "-s -w" -o /code/fluxbind-nri ./cmd/fluxbind-nri/fluxbind_nri.go
+ENTRYPOINT ["/code/fluxbind-nri"]

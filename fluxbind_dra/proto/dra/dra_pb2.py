@@ -9,53 +9,55 @@ from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    5,
-    28,
-    1,
-    '',
-    'fluxbind_dra/proto/dra/dra.proto'
+    _runtime_version.Domain.PUBLIC, 5, 28, 1, "", "fluxbind_dra/proto/dra/dra.proto"
 )
 # @@protoc_insertion_point(imports)
 
 _sym_db = _symbol_database.Default()
 
 
-
-
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n fluxbind_dra/proto/dra/dra.proto\x12#k8s.io.kubelet.pkg.apis.dra.v1beta1\"Y\n\x1bNodePrepareResourcesRequest\x12:\n\x06\x63laims\x18\x01 \x03(\x0b\x32*.k8s.io.kubelet.pkg.apis.dra.v1beta1.Claim\"\xee\x01\n\x1cNodePrepareResourcesResponse\x12]\n\x06\x63laims\x18\x01 \x03(\x0b\x32M.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodePrepareResourcesResponse.ClaimsEntry\x1ao\n\x0b\x43laimsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12O\n\x05value\x18\x02 \x01(\x0b\x32@.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodePrepareResourceResponse:\x02\x38\x01\"j\n\x1bNodePrepareResourceResponse\x12<\n\x07\x64\x65vices\x18\x01 \x03(\x0b\x32+.k8s.io.kubelet.pkg.apis.dra.v1beta1.Device\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"_\n\x06\x44\x65vice\x12\x15\n\rrequest_names\x18\x01 \x03(\t\x12\x11\n\tpool_name\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65vice_name\x18\x03 \x01(\t\x12\x16\n\x0e\x63\x64i_device_ids\x18\x04 \x03(\t\"[\n\x1dNodeUnprepareResourcesRequest\x12:\n\x06\x63laims\x18\x01 \x03(\x0b\x32*.k8s.io.kubelet.pkg.apis.dra.v1beta1.Claim\"\xf4\x01\n\x1eNodeUnprepareResourcesResponse\x12_\n\x06\x63laims\x18\x01 \x03(\x0b\x32O.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodeUnprepareResourcesResponse.ClaimsEntry\x1aq\n\x0b\x43laimsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12Q\n\x05value\x18\x02 \x01(\x0b\x32\x42.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodeUnprepareResourceResponse:\x02\x38\x01\".\n\x1dNodeUnprepareResourceResponse\x12\r\n\x05\x65rror\x18\x01 \x01(\t\"5\n\x05\x43laim\x12\x11\n\tnamespace\x18\x01 \x01(\t\x12\x0b\n\x03uid\x18\x02 \x01(\t\x12\x0c\n\x04name\x18\x03 \x01(\t2\xd1\x02\n\tDRAPlugin\x12\x9d\x01\n\x14NodePrepareResources\x12@.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodePrepareResourcesRequest\x1a\x41.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodePrepareResourcesResponse\"\x00\x12\xa3\x01\n\x16NodeUnprepareResources\x12\x42.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodeUnprepareResourcesRequest\x1a\x43.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodeUnprepareResourcesResponse\"\x00\x42%Z#k8s.io/kubelet/pkg/apis/dra/v1beta1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n fluxbind_dra/proto/dra/dra.proto\x12#k8s.io.kubelet.pkg.apis.dra.v1beta1"Y\n\x1bNodePrepareResourcesRequest\x12:\n\x06\x63laims\x18\x01 \x03(\x0b\x32*.k8s.io.kubelet.pkg.apis.dra.v1beta1.Claim"\xee\x01\n\x1cNodePrepareResourcesResponse\x12]\n\x06\x63laims\x18\x01 \x03(\x0b\x32M.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodePrepareResourcesResponse.ClaimsEntry\x1ao\n\x0b\x43laimsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12O\n\x05value\x18\x02 \x01(\x0b\x32@.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodePrepareResourceResponse:\x02\x38\x01"j\n\x1bNodePrepareResourceResponse\x12<\n\x07\x64\x65vices\x18\x01 \x03(\x0b\x32+.k8s.io.kubelet.pkg.apis.dra.v1beta1.Device\x12\r\n\x05\x65rror\x18\x02 \x01(\t"_\n\x06\x44\x65vice\x12\x15\n\rrequest_names\x18\x01 \x03(\t\x12\x11\n\tpool_name\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65vice_name\x18\x03 \x01(\t\x12\x16\n\x0e\x63\x64i_device_ids\x18\x04 \x03(\t"[\n\x1dNodeUnprepareResourcesRequest\x12:\n\x06\x63laims\x18\x01 \x03(\x0b\x32*.k8s.io.kubelet.pkg.apis.dra.v1beta1.Claim"\xf4\x01\n\x1eNodeUnprepareResourcesResponse\x12_\n\x06\x63laims\x18\x01 \x03(\x0b\x32O.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodeUnprepareResourcesResponse.ClaimsEntry\x1aq\n\x0b\x43laimsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12Q\n\x05value\x18\x02 \x01(\x0b\x32\x42.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodeUnprepareResourceResponse:\x02\x38\x01".\n\x1dNodeUnprepareResourceResponse\x12\r\n\x05\x65rror\x18\x01 \x01(\t"5\n\x05\x43laim\x12\x11\n\tnamespace\x18\x01 \x01(\t\x12\x0b\n\x03uid\x18\x02 \x01(\t\x12\x0c\n\x04name\x18\x03 \x01(\t2\xd1\x02\n\tDRAPlugin\x12\x9d\x01\n\x14NodePrepareResources\x12@.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodePrepareResourcesRequest\x1a\x41.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodePrepareResourcesResponse"\x00\x12\xa3\x01\n\x16NodeUnprepareResources\x12\x42.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodeUnprepareResourcesRequest\x1a\x43.k8s.io.kubelet.pkg.apis.dra.v1beta1.NodeUnprepareResourcesResponse"\x00\x42%Z#k8s.io/kubelet/pkg/apis/dra/v1beta1b\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'fluxbind_dra.proto.dra.dra_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(
+    DESCRIPTOR, "fluxbind_dra.proto.dra.dra_pb2", _globals
+)
 if not _descriptor._USE_C_DESCRIPTORS:
-  _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'Z#k8s.io/kubelet/pkg/apis/dra/v1beta1'
-  _globals['_NODEPREPARERESOURCESRESPONSE_CLAIMSENTRY']._loaded_options = None
-  _globals['_NODEPREPARERESOURCESRESPONSE_CLAIMSENTRY']._serialized_options = b'8\001'
-  _globals['_NODEUNPREPARERESOURCESRESPONSE_CLAIMSENTRY']._loaded_options = None
-  _globals['_NODEUNPREPARERESOURCESRESPONSE_CLAIMSENTRY']._serialized_options = b'8\001'
-  _globals['_NODEPREPARERESOURCESREQUEST']._serialized_start=73
-  _globals['_NODEPREPARERESOURCESREQUEST']._serialized_end=162
-  _globals['_NODEPREPARERESOURCESRESPONSE']._serialized_start=165
-  _globals['_NODEPREPARERESOURCESRESPONSE']._serialized_end=403
-  _globals['_NODEPREPARERESOURCESRESPONSE_CLAIMSENTRY']._serialized_start=292
-  _globals['_NODEPREPARERESOURCESRESPONSE_CLAIMSENTRY']._serialized_end=403
-  _globals['_NODEPREPARERESOURCERESPONSE']._serialized_start=405
-  _globals['_NODEPREPARERESOURCERESPONSE']._serialized_end=511
-  _globals['_DEVICE']._serialized_start=513
-  _globals['_DEVICE']._serialized_end=608
-  _globals['_NODEUNPREPARERESOURCESREQUEST']._serialized_start=610
-  _globals['_NODEUNPREPARERESOURCESREQUEST']._serialized_end=701
-  _globals['_NODEUNPREPARERESOURCESRESPONSE']._serialized_start=704
-  _globals['_NODEUNPREPARERESOURCESRESPONSE']._serialized_end=948
-  _globals['_NODEUNPREPARERESOURCESRESPONSE_CLAIMSENTRY']._serialized_start=835
-  _globals['_NODEUNPREPARERESOURCESRESPONSE_CLAIMSENTRY']._serialized_end=948
-  _globals['_NODEUNPREPARERESOURCERESPONSE']._serialized_start=950
-  _globals['_NODEUNPREPARERESOURCERESPONSE']._serialized_end=996
-  _globals['_CLAIM']._serialized_start=998
-  _globals['_CLAIM']._serialized_end=1051
-  _globals['_DRAPLUGIN']._serialized_start=1054
-  _globals['_DRAPLUGIN']._serialized_end=1391
+    _globals["DESCRIPTOR"]._loaded_options = None
+    _globals["DESCRIPTOR"]._serialized_options = (
+        b"Z#k8s.io/kubelet/pkg/apis/dra/v1beta1"
+    )
+    _globals["_NODEPREPARERESOURCESRESPONSE_CLAIMSENTRY"]._loaded_options = None
+    _globals["_NODEPREPARERESOURCESRESPONSE_CLAIMSENTRY"]._serialized_options = b"8\001"
+    _globals["_NODEUNPREPARERESOURCESRESPONSE_CLAIMSENTRY"]._loaded_options = None
+    _globals["_NODEUNPREPARERESOURCESRESPONSE_CLAIMSENTRY"]._serialized_options = (
+        b"8\001"
+    )
+    _globals["_NODEPREPARERESOURCESREQUEST"]._serialized_start = 73
+    _globals["_NODEPREPARERESOURCESREQUEST"]._serialized_end = 162
+    _globals["_NODEPREPARERESOURCESRESPONSE"]._serialized_start = 165
+    _globals["_NODEPREPARERESOURCESRESPONSE"]._serialized_end = 403
+    _globals["_NODEPREPARERESOURCESRESPONSE_CLAIMSENTRY"]._serialized_start = 292
+    _globals["_NODEPREPARERESOURCESRESPONSE_CLAIMSENTRY"]._serialized_end = 403
+    _globals["_NODEPREPARERESOURCERESPONSE"]._serialized_start = 405
+    _globals["_NODEPREPARERESOURCERESPONSE"]._serialized_end = 511
+    _globals["_DEVICE"]._serialized_start = 513
+    _globals["_DEVICE"]._serialized_end = 608
+    _globals["_NODEUNPREPARERESOURCESREQUEST"]._serialized_start = 610
+    _globals["_NODEUNPREPARERESOURCESREQUEST"]._serialized_end = 701
+    _globals["_NODEUNPREPARERESOURCESRESPONSE"]._serialized_start = 704
+    _globals["_NODEUNPREPARERESOURCESRESPONSE"]._serialized_end = 948
+    _globals["_NODEUNPREPARERESOURCESRESPONSE_CLAIMSENTRY"]._serialized_start = 835
+    _globals["_NODEUNPREPARERESOURCESRESPONSE_CLAIMSENTRY"]._serialized_end = 948
+    _globals["_NODEUNPREPARERESOURCERESPONSE"]._serialized_start = 950
+    _globals["_NODEUNPREPARERESOURCERESPONSE"]._serialized_end = 996
+    _globals["_CLAIM"]._serialized_start = 998
+    _globals["_CLAIM"]._serialized_end = 1051
+    _globals["_DRAPLUGIN"]._serialized_start = 1054
+    _globals["_DRAPLUGIN"]._serialized_end = 1391
 # @@protoc_insertion_point(module_scope)

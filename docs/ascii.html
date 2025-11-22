@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluxbind DRA/NRI Plugin - ASCII Architecture Diagram</title>
+    <style>
+        /* CSS is unchanged */
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #24292e;
+            --header-color: #0366d6;
+            --border-color: #e1e4e8;
+            --diagram-bg-color: #f6f8fa;
+            --diagram-text-color: #24292e;
+            --box-shadow-color: rgba(0, 0, 0, 0.1);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #0d1117;
+                --text-color: #c9d1d9;
+                --header-color: #58a6ff;
+                --border-color: #30363d;
+                --diagram-bg-color: #161b22;
+                --diagram-text-color: #c9d1d9;
+                --box-shadow-color: rgba(0, 0, 0, 0.4);
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            line-height: 1.6;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: var(--header-color);
+            font-size: 2.8em;
+            margin: 0;
+        }
+
+        p {
+            font-size: 1.2em;
+            color: var(--text-color);
+        }
+
+        .diagram-container {
+            background-color: var(--diagram-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 12px var(--box-shadow-color);
+            overflow-x: auto;
+        }
+
+        pre {
+            color: var(--diagram-text-color);
+            font-family: "SF Mono", SFMono-Regular, ui-monospace, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", "Oxygen Mono", "Ubuntu Monospace", "Source Code Pro", "Fira Mono", "Droid Sans Mono", "Courier New", monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre;
+            margin: 0;
+        }
+
+        .explanation {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .explanation h2 {
+            text-align: center;
+            font-size: 2em;
+            color: var(--header-color);
+            margin-bottom: 30px;
+        }
+
+        .phase {
+            margin-bottom: 30px;
+        }
+
+        .phase h3 {
+            font-size: 1.5em;
+            color: var(--text-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .step-list {
+            padding-left: 20px;
+        }
+
+        .step-list li {
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+
+        .step-list ul {
+            margin-top: 10px;
+            padding-left: 25px;
+        }
+
+        .step-list ul li {
+            font-size: 0.95em;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Fluxbind DRA/NRI Plugin Architecture</h1>
+            <p>This diagram illustrates the end-to-end sequence of events when a user creates a Pod that requests a CPU shape via a ResourceClaim.</p>
+        </header>
+
+        <main>
+            <div class="diagram-container">
+<pre>
++----------+      +---------+      +-----------+
+|   User   |----->| K8s API |----->| Scheduler |
++----------+      +---------+      +-----------+
+    | (1)             | (2)            | (3)
+    | kubectl apply   | Needs          | Assigns Pod
+    | Pod + Claim     | Scheduling     | to a Node
+    v                 v                v
++--------------------------------------------------------------------------------------------------------------------+
+|                                                      NODE                                                          |
+|                                                                                                                    |
+|  +-----------+         +------------------------------------------------+                                          |
+|  |  Kubelet  |         |             fluxbind DaemonSet Pod             |                                          |
+|  +-----------+         |  +----------------+   +-------------------+    |                                          |
+|       |                |  |   Python DRA   |   |   Go NRI Sidecar  |    |                                          |
+|       |                |  +----------------+   +-------------------+    |                                          |
+|       |                +------------------------------------------------+                                          |
+|       |                                                                                                            |
+|       |   [ Phase 1: Scheduling & Resource Preparation ]                                                           |
+|       |                                                                                                            |
+|       +----------(4) NodePrepareResources(claim)------------------->|                                              |
+|       |                |                                            |                                              |
+|       |                |  [ Creates reservation with fluxbind, ]    |                                              |
+|       |                |  [ calculates ordered CPU list,         ]  |                                              |
+|       |                |  [ and writes a CDI Spec file with      ]  |                                              |
+|       |                |  [ the FLUXBIND_CPUSET envar.           ]  |                                              |
+|       |                |                                            |                                              |
+|       |<---------------(5) Success response-------------------------+                                              |
+|       |                                                                                                            |
+|       |   [ Phase 2: Container Creation & Affinity Enforcement ]                                                   |
+|       |                                                                                                            |
+|       v                                                                                                            |
+|  +------------+                                                                                                    |
+|  | Containerd |                                                                                                    |
+|  +------------+                                                                                                    |
+|       |                                                                                                            |
+|       | [ (6) Reads CDI spec from host, injects FLUXBIND_CPUSET into OCI spec ]                                    |
+|       |                                                                                                            |
+|       +----------(7) CreateContainer() hook-------------------------->|                                            |
+|       |                |                                              |                                            |
+|       |                |             [ (8) Reads FLUXBIND_CPUSET from ]                                            |
+|       |                |             [     the container's Env list.  ]                                            |
+|       |                |                                              |                                            |
+|       |<---------------(9) Returns ContainerAdjustment----------------+                                            |
+|       |                                                                                                            |
+|       | [ Merges adjustment into final OCI spec ]                                                                  |
+|       v                                                                                                            |
+|  +------+          +------------------+                                                                            |
+|  | Runc |----(10)-->| Kernel (cgroupfs)|                                                                           |
+|  +------+          +------------------+                                                                            |
+|       | Writes "0-15" to cpuset.cpus file                                                                          |
+|       v                                                                                                            |
+|  Container Started                                                                                                 |
+|                                                                                                                    |
++--------------------------------------------------------------------------------------------------------------------+
+</pre>
+            </div>
+        </main>
+
+        <section class="explanation">
+            <h2>How does it work?</h2>
+            <p>The architecture uses a two-phase process involving a Python DRA plugin to handle Kubernetes interactions and a Go NRI sidecar to perform low-level container modifications.</p>
+
+            <div class="phase">
+                <h3>Phase 1: Scheduling & Resource Preparation</h3>
+                <ol class="step-list">
+                    <li><strong>Pod Submission:</strong> A user submits a Pod and a corresponding `ResourceClaim` to the Kubernetes API server.</li>
+                    <li><strong>Scheduling:</strong> The Kubernetes Scheduler identifies the Pod for scheduling.</li>
+                    <li><strong>Node Assignment:</strong> The Scheduler assigns the Pod to a specific Node.</li>
+                    <li><strong>Resource Preparation:</strong> The Kubelet on the assigned node calls the `NodePrepareResources` gRPC endpoint on the <strong>Python DRA</strong> plugin.</li>
+                    <li><strong>Reservation & CDI Specification:</strong> The Python DRA plugin:
+                        <ul>
+                            <li>Creates a resource reservation using the `fluxbind` resource manager.</li>
+                            <li>Calculates the specific, ordered list of CPU IDs (e.g., "15,14,13,...,0").</li>
+                            <li>Generates a CDI (Container Device Interface) JSON specification file on the node. This file defines a "container edit" that injects the <strong>FLUXBIND_CPUSET</strong> environment variable into any container using this resource.</li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+
+            <div class="phase">
+                <h3>Phase 2: Container Creation & Affinity Enforcement</h3>
+                <ol class="step-list" start="6">
+                    <li><strong>CDI Injection:</strong> Before creating the container, <strong>Containerd</strong> reads the CDI specification file. It applies the edit, injecting the `FLUXBIND_CPUSET=15,14,...,0` environment variable into the container's base OCI specification.</li>
+                    <li><strong>NRI Hook Triggered:</strong> With the environment variable now present in the spec, Containerd triggers the NRI `CreateContainer` hook, calling the <strong>Go NRI Sidecar</strong>.</li>
+                    <li><strong>Environment Variable Read:</strong> The Go sidecar inspects the container's environment variable list, finds `FLUXBIND_CPUSET`, and extracts its value (the ordered CPU list).</li>
+                    <li><strong>Container Adjustment:</strong> The Go sidecar returns a `ContainerAdjustment` to Containerd, instructing it to set the `cpuset.cpus` cgroup property using the list it just read.</li>
+                    <li><strong>OCI Spec Finalization & Execution:</strong>
+                        <ul>
+                            <li>Containerd merges this final adjustment into the OCI specification.</li>
+                            <li>It calls <strong>Runc</strong> to create the container.</li>
+                            <li><strong>Runc</strong> writes the CPU list to the container's `cpuset.cpus` file in the <strong>Kernel's cgroup filesystem</strong>, enforcing the CPU constraint.</li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+        </section>
+    </div>
+
+</body>
+</html>

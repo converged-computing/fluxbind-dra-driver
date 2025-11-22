@@ -1,19 +1,19 @@
-import grpc
-from concurrent import futures
-import time
-import os
 import logging
-from kubernetes import client, config
+import os
+import time
+from concurrent import futures
 
-import fluxbind_dra.nri as nri
+import grpc
 from fluxbind.manager import NodeResourceManager
-from fluxbind_dra.proto.dra import dra_pb2, dra_pb2_grpc
-from fluxbind_dra.proto.pluginregistration import api_pb2 as registration_pb2
-from fluxbind_dra.proto.pluginregistration import api_pb2_grpc as registration_pb2_grpc
-from fluxbind_dra.proto.nri import api_pb2_grpc as nri_pb2_grpc
+from kubernetes import client, config
 
 import fluxbind_dra.defaults as defaults
 import fluxbind_dra.devices as devices
+import fluxbind_dra.utils as utils
+from fluxbind_dra.proto.dra import dra_pb2, dra_pb2_grpc
+from fluxbind_dra.proto.pluginregistration import api_pb2 as registration_pb2
+from fluxbind_dra.proto.pluginregistration import \
+    api_pb2_grpc as registration_pb2_grpc
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,7 +21,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 log = logging.getLogger(__name__)
-
 
 
 class DraPluginServicer(dra_pb2_grpc.DRAPluginServicer):
@@ -39,7 +38,7 @@ class DraPluginServicer(dra_pb2_grpc.DRAPluginServicer):
         node_name = os.environ.get("NODE_NAME")
         pod_namespace = os.environ.get("POD_NAMESPACE")
         if not node_name or not pod_namespace:
-             raise RuntimeError("NODE_NAME or POD_NAMESPACE env var is not set.")
+            raise RuntimeError("NODE_NAME or POD_NAMESPACE env var is not set.")
         devices.create_or_update_resource_slice(node_name, pod_namespace)
         self.prepared = True
 
@@ -51,25 +50,29 @@ class DraPluginServicer(dra_pb2_grpc.DRAPluginServicer):
             self.k8s_client = client.CustomObjectsApi()
             log.info("Kubernetes API client initialized.")
         return self.k8s_client
-    
+
     def get_shape_from_claim(self, claim) -> dict:
         """
         Translates a Kubernetes ResourceClaim into a fluxbind shape.
         """
-        log.info(f"Fetching full ResourceClaim '{claim.namespace}/{claim.name}' from API server...")
+        log.info(
+            f"Fetching full ResourceClaim '{claim.namespace}/{claim.name}' from API server..."
+        )
         api = self._get_k8s_client()
         claim_obj = api.get_namespaced_custom_object(
             group="resource.k8s.io",
-                version="v1",
-                name=claim.name,
-                namespace=claim.namespace,
-                plural="resourceclaims",
-            )
-            
+            version="v1",
+            name=claim.name,
+            namespace=claim.namespace,
+            plural="resourceclaims",
+        )
+
         # Now we parse the full object we just fetched
         print(claim_obj)
-        opaque_params = claim_obj["spec"]["devices"]["config"][0]["opaque"]["parameters"]
-        shape = dict(opaque_params) # It's already a dict-like structure            
+        opaque_params = claim_obj["spec"]["devices"]["config"][0]["opaque"][
+            "parameters"
+        ]
+        shape = dict(opaque_params)  # It's already a dict-like structure
         log.info(f"Successfully parsed shape for claim '{claim.name}': {shape}")
         return shape
 
@@ -103,7 +106,12 @@ class DraPluginServicer(dra_pb2_grpc.DRAPluginServicer):
                 log.info(
                     f"Generated binding for claim {claim.uid}: cpuset={mask}, gpus={gpu_string}"
                 )
-                device_name = self.cdi_manager.add_device(claim.uid, mask)
+
+                # Should we reverse cpus?
+                reversed = any([x.get("reverse") == True for x in shape["resources"]])
+                device_name = self.cdi_manager.add_device(
+                    claim.uid, mask, reversed=reversed
+                )
                 cdi_full_name = f"{defaults.PLUGIN_NAME}/shape={device_name}"
                 cdi_ids = [cdi_full_name]
                 if gpu_string != "NONE":
@@ -115,12 +123,9 @@ class DraPluginServicer(dra_pb2_grpc.DRAPluginServicer):
                     device_name="shape",
                     cdi_device_ids=cdi_ids,
                 )
-                prepare_response = dra_pb2.NodePrepareResourceResponse(
-                    devices=[device]
-                )
+                prepare_response = dra_pb2.NodePrepareResourceResponse(devices=[device])
                 response.claims[claim.uid].CopyFrom(prepare_response)
 
-    
             else:
                 msg = f"Could not allocate resources for claim {claim.uid}"
                 log.error(msg)
@@ -139,9 +144,8 @@ class DraPluginServicer(dra_pb2_grpc.DRAPluginServicer):
         for claim in request.claims:
             self.manager.release_reservation(claim.uid)
             self.cdi_manager.remove_device(claim.uid)
-
             unprepare_response = dra_pb2.NodeUnprepareResourceResponse()
-            
+
             # Add an entry to the 'claims' map for this claim UID.
             # Kubelet requires this entry to exist, even if it's empty.
             response.claims[claim.uid].CopyFrom(unprepare_response)
@@ -176,8 +180,11 @@ class RegistrationServicer(registration_pb2_grpc.RegistrationServicer):
         Kubelet calls this to notify the plugin of its registration status.
         For now, we can just log it and return an empty response.
         """
-        log.info(f"Received NotifyRegistrationStatus: Registered={request.plugin_registered}, Error={request.error}")
+        log.info(
+            f"Received NotifyRegistrationStatus: Registered={request.plugin_registered}, Error={request.error}"
+        )
         return registration_pb2.RegistrationStatusResponse()
+
 
 def serve():
     """
@@ -186,7 +193,7 @@ def serve():
     log.info("Starting DRA plugin server...")
 
     # Clean up old sockets and create directories
-    for path in [defaults.DRA_SOCKET_PATH, defaults.REGISTRATION_SOCKET_PATH, defaults.NRI_SOCKET_PATH]:
+    for path in [defaults.DRA_SOCKET_PATH, defaults.REGISTRATION_SOCKET_PATH]:
         sock_path = path.replace("unix://", "")
         if os.path.exists(sock_path):
             try:
@@ -208,11 +215,8 @@ def serve():
     registration_pb2_grpc.add_RegistrationServicer_to_server(
         RegistrationServicer(), server
     )
-    nri_manager = nri.NriServicer()
-    nri_pb2_grpc.add_PluginServicer_to_server(nri_manager, server)
     server.add_insecure_port(defaults.DRA_SOCKET_PATH)
     server.add_insecure_port(defaults.REGISTRATION_SOCKET_PATH)
-    server.add_insecure_port(defaults.NRI_SOCKET_PATH)
 
     # Start the server and wait
     server.start()
@@ -221,9 +225,9 @@ def serve():
     )
 
     # Do slower stuff after we've registered
-    plugin.prepare_resources()
     manager = prepare_manager()
     plugin.manager = manager
+    plugin.prepare_resources()
 
     try:
         while True:

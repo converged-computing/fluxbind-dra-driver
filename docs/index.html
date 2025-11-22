@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluxbind DRA/NRI Plugin Architecture</title>
+    <style>
+        /* CSS is unchanged */
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #24292e;
+            --header-color: #0366d6;
+            --border-color: #e1e4e8;
+            --diagram-bg-color: #f6f8fa;
+            --box-shadow-color: rgba(0, 0, 0, 0.1);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #0d1117;
+                --text-color: #c9d1d9;
+                --header-color: #58a6ff;
+                --border-color: #30363d;
+                --diagram-bg-color: #161b22;
+                --box-shadow-color: rgba(0, 0, 0, 0.4);
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            line-height: 1.6;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: var(--header-color);
+            font-size: 2.8em;
+            margin: 0;
+        }
+
+        p {
+            font-size: 1.2em;
+            color: var(--text-color);
+        }
+
+        .diagram-container {
+            background-color: var(--diagram-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 12px var(--box-shadow-color);
+            overflow-x: auto;
+        }
+
+        .mermaid {
+            font-size: 16px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Fluxbind DRA/NRI Plugin Architecture</h1>
+            <p>This diagram illustrates the end-to-end sequence of events when a user creates a Pod that requests a CPU shape via a ResourceClaim.</p>
+        </header>
+
+        <main>
+            <div class="diagram-container">
+                <pre class="mermaid">
+sequenceDiagram
+    participant User
+    participant K8s API
+    participant Scheduler
+
+    %% THIS IS THE FIX: A dark grey color is used for the Node box.
+    %% This color is chosen to look good in both light and dark modes.
+    box rgb(47, 79, 79) Node
+        participant Kubelet
+        participant Python DRA
+        participant Go NRI Sidecar
+        participant Shared Volume
+        participant Containerd
+        participant Runc
+        participant Kernel (cgroupfs)
+    end
+
+    note over Python DRA, Go NRI Sidecar: fluxbind DaemonSet Pod
+
+    Note over User, K8s API: Phase 1: Scheduling & Resource Preparation
+    User->>K8s API: kubectl apply Pod + ResourceClaim
+    K8s API->>Scheduler: Pod needs scheduling
+    Scheduler->>Kubelet: Assign Pod to this Node
+
+    Kubelet->>Python DRA: NodePrepareResources(claim)
+    activate Python DRA
+    Note right of Python DRA: Creates reservation with fluxbind resource manager.
+    Python DRA->>K8s API: Get full ResourceClaim object
+    K8s API-->>Python DRA: Return claim with Pod UID in status.reservedFor
+    Note right of Python DRA: Calculates ordered CPU list ("15,14,...,0")
+    Python DRA->>Shared Volume: Writes file: "[Pod UID].cpulist"
+    Python DRA-->>Kubelet: Success response
+    deactivate Python DRA
+
+    Note over Kubelet, Kernel (cgroupfs): Phase 2: Container Creation & Affinity Enforcement
+    Kubelet->>Containerd: CreateContainer(PodSpec)
+    activate Containerd
+    Note over Containerd: Triggers NRI hook for the container.
+    Containerd->>Go NRI Sidecar: CreateContainer(pod, container)
+    activate Go NRI Sidecar
+    Note right of Go NRI Sidecar: The 'pod' object contains the Pod UID.
+    Go NRI Sidecar->>Shared Volume: Reads file: "[Pod UID].cpulist"
+    Note right of Go NRI Sidecar: The list "15,14,...,0" is read.
+    Go NRI Sidecar-->>Containerd: Return ContainerAdjustment with cpus = "15,14,...,0"
+    deactivate Go NRI Sidecar
+
+    Note over Containerd: Merges adjustment into final OCI spec.
+    Containerd->>Runc: Create container with final spec
+    activate Runc
+    Runc->>Kernel (cgroupfs): Writes "0-15" to container's cpuset.cpus file
+    Note right of Runc: Kernel normalizes the list but enforces the set.
+    Runc-->>Containerd: Container process started
+    deactivate Runc
+    Containerd-->>Kubelet: Container created successfully
+    deactivate Containerd
+                </pre>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDarkMode ? 'dark' : 'default',
+            sequence: {
+                showSequenceNumbers: true,
+                actorMargin: 50
+            },
+            themeVariables: {
+                background: isDarkMode ? '#161b22' : '#f6f8fa',
+                primaryColor: isDarkMode ? '#21262d' : '#f0f2f5',
+                primaryTextColor: isDarkMode ? '#c9d1d9' : '#24292e',
+                lineColor: isDarkMode ? '#8b949e' : '#586069',
+                actorBkg: isDarkMode ? '#58a6ff' : '#0366d6',
+                actorTextColor: '#ffffff',
+            }
+        });
+    </script>
+
+</body>
+</html>

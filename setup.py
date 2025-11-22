@@ -99,5 +99,7 @@ if __name__ == "__main__":
             "Operating System :: Unix",
             "Programming Language :: Python :: 3.11",
         ],
-        entry_points={"console_scripts": ["fluxbind-dra-driver=fluxbind_dra.server:serve"]},
+        entry_points={
+            "console_scripts": ["fluxbind-dra-driver=fluxbind_dra.server:serve"]
+        },
     )
