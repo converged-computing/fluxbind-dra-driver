@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,10 +17,19 @@ import (
 	"k8s.io/utils/cpuset"
 )
 
-// Renamed for clarity as it's used for both env vars now.
 const (
-	cpusetEnvVar         = "FLUXBIND_CPUSET"
+	// cpusetEnvVar carries the CPU selection produced by the DRA plugin. It is
+	// either an hwloc bitmask ("0x0000000f,,0x0") or a CPU list ("0-3,64").
+	cpusetEnvVar = "FLUXBIND_CPUSET"
+	// cpusetReversedEnvVar asks for the CPU *order* to be reversed.
 	cpusetReversedEnvVar = "FLUXBIND_CPUSET_REVERSED"
+	// cpuOrderEnvVar is injected by this plugin. It carries the ordered, explicit
+	// CPU list for whatever performs per-process affinity inside the container.
+	// The cgroup cannot express order, so ordering has to travel out-of-band.
+	cpuOrderEnvVar = "FLUXBIND_CPU_ORDER"
+
+	// hwlocGroupBits is the width of one comma-separated field in an hwloc bitmask.
+	hwlocGroupBits = 32
 )
 
 // Driver is the structure that holds all runtime information for our NRI plugin.
@@ -59,9 +70,14 @@ func Start(ctx context.Context, pluginName, pluginIdx string) (*Driver, error) {
 }
 
 // Configure is called by NRI to register the plugin and subscribe to events.
+//
+// We subscribe explicitly rather than returning 0. Returning 0 makes the stub
+// fall back to the mask inferred from the implemented handlers, and because this
+// Driver implements every handler in the interface (most as no-ops) that would
+// put us on the synchronous path for every container lifecycle event on the node.
 func (d *Driver) Configure(ctx context.Context, config, runtime, version string) (stub.EventMask, error) {
 	klog.Infof("Configure request: runtime=%s, version=%s", runtime, version)
-	return 0, nil
+	return api.MustParseEventMask("CreateContainer"), nil
 }
 
 // CreateContainer is the core hook where we modify the container spec.
@@ -70,42 +86,36 @@ func (d *Driver) CreateContainer(ctx context.Context, pod *api.PodSandbox, ctr *
 
 	adjustment := &api.ContainerAdjustment{}
 
-	// Step 1: Find the environment variables provided by the Python plugin.
-	hexMaskStr, wantsReversal := d.findCpusetInEnv(ctr)
-	if hexMaskStr == "" {
+	// Find the CPU selection provided by the DRA plugin.
+	cpuSpec, wantsReversal := d.findCpusetInEnv(ctr)
+	if cpuSpec == "" {
 		klog.V(5).Infof("No %s environment variable found for container %s. No affinity will be applied.", cpusetEnvVar, ctr.Name)
 		return adjustment, nil, nil
 	}
 
-	// Step 2: Convert the hex mask into a slice of integer CPU IDs.
-	cpus, err := parseHexMaskToCPUs(hexMaskStr)
+	cpus, err := parseCPUSpec(cpuSpec)
 	if err != nil {
-		klog.Errorf("Failed to parse hex mask %q for container %s: %v. No affinity will be applied.", hexMaskStr, ctr.Name, err)
-		return adjustment, nil, nil
+		// Deliberately fail the container rather than starting it unbound. A pod that
+		// asked for exclusive topology-aware placement and silently received the whole
+		// machine is worse than a pod that does not start: it will oversubscribe CPUs
+		// that other claims believe they own exclusively.
+		klog.Errorf("refusing to create container %s/%s/%s: cannot honor %s=%q: %v",
+			pod.Namespace, pod.Name, ctr.Name, cpusetEnvVar, cpuSpec, err)
+		return nil, nil, fmt.Errorf("fluxbind: cannot honor %s=%q: %w", cpusetEnvVar, cpuSpec, err)
 	}
 
-	// Step 3: If requested, reverse the order of the CPUs.
-	if wantsReversal {
-		klog.Infof("Reversing CPU order for container %s", ctr.Name)
-		reverseCPUs(cpus)
-	}
+	// cgroup cpuset.cpus is a *set*. The kernel has no notion of CPU ordering, so the
+	// canonical ascending form is the only thing that is meaningful here.
+	set := cpuset.New(cpus...)
+	adjustment.SetLinuxCPUSetCPUs(set.String())
 
-	// Step 4: Format the final (potentially reversed) slice into the string runc needs.
-	finalCpusetStr := formatCPUListString(cpus)
+	// Ordering (including reversal) only means something to whatever calls
+	// sched_setaffinity inside the container, so it travels as an ordered env var.
+	order := orderedCPUList(cpus, wantsReversal)
+	adjustment.AddEnv(cpuOrderEnvVar, order)
 
-	klog.Infof("Applying final cpuset %q to container %s", finalCpusetStr, ctr.Name)
-
-	// Step 5: Apply the adjustment to the container's cgroup.
-	if adjustment.Linux == nil {
-		adjustment.Linux = &api.LinuxContainerAdjustment{}
-	}
-	if adjustment.Linux.Resources == nil {
-		adjustment.Linux.Resources = &api.LinuxResources{}
-	}
-	if adjustment.Linux.Resources.Cpu == nil {
-		adjustment.Linux.Resources.Cpu = &api.LinuxCPU{}
-	}
-	adjustment.Linux.Resources.Cpu.Cpus = finalCpusetStr
+	klog.Infof("container %s/%s/%s: cpuset.cpus=%q %s=%q",
+		pod.Namespace, pod.Name, ctr.Name, set.String(), cpuOrderEnvVar, order)
 
 	return adjustment, nil, nil
 }
@@ -113,7 +123,7 @@ func (d *Driver) CreateContainer(ctx context.Context, pod *api.PodSandbox, ctr *
 // findCpusetInEnv iterates through the container's environment variables to find the
 // cpuset and reversal flag injected by the Python CDI manager.
 func (d *Driver) findCpusetInEnv(ctr *api.Container) (string, bool) {
-	var hexMask string
+	var cpuSpec string
 	var wantsReversal bool
 
 	if ctr.Env == nil {
@@ -125,57 +135,132 @@ func (d *Driver) findCpusetInEnv(ctr *api.Container) (string, bool) {
 
 	for _, envVar := range ctr.Env {
 		if val, found := strings.CutPrefix(envVar, cpusetPrefix); found {
-			hexMask = val
+			cpuSpec = strings.TrimSpace(val)
 		}
 		if val, found := strings.CutPrefix(envVar, reversalPrefix); found {
-			if strings.ToLower(val) == "yes" {
+			switch strings.ToLower(strings.TrimSpace(val)) {
+			case "yes", "true", "1":
 				wantsReversal = true
 			}
 		}
 	}
-	return hexMask, wantsReversal
+	return cpuSpec, wantsReversal
 }
 
-// --- NEW MODULAR HELPER FUNCTIONS ---
-
-// parseHexMaskToCPUs takes a hex string like "0x00ff" and returns a slice of integers, e.g., [0, 1, 2, 3, 4, 5, 6, 7].
-func parseHexMaskToCPUs(hexMask string) ([]int, error) {
-	if !strings.HasPrefix(hexMask, "0x") {
-		return nil, fmt.Errorf("invalid hex mask format: missing '0x' prefix")
+// parseCPUSpec accepts either an hwloc bitmask or a CPU list and returns the
+// selected CPU IDs in ascending order.
+func parseCPUSpec(spec string) ([]int, error) {
+	s := strings.TrimSpace(spec)
+	if s == "" {
+		return nil, fmt.Errorf("empty CPU spec")
 	}
-	hexVal := strings.TrimPrefix(hexMask, "0x")
 
-	mask, err := strconv.ParseUint(hexVal, 16, 64)
+	// An hwloc bitmask always carries at least one "0x" field; a CPU list never does.
+	if strings.Contains(strings.ToLower(s), "0x") {
+		return parseHwlocMask(s)
+	}
+
+	set, err := cpuset.Parse(s)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse hex string %q: %w", hexVal, err)
+		return nil, fmt.Errorf("CPU list %q is not parseable: %w", s, err)
 	}
+	if set.Size() == 0 {
+		return nil, fmt.Errorf("CPU list %q selects no CPUs", s)
+	}
+	return set.List(), nil
+}
+
+// parseHwlocMask parses an hwloc cpuset bitmask into the CPU IDs it selects.
+//
+// hwloc prints a bitmask as comma-separated 32-bit fields, most significant field
+// FIRST, and compresses runs of all-zero fields by emitting empty fields. Each empty
+// field stands for exactly one all-zero 32-bit group. For example, on a 512-PU node:
+//
+//	PUs 0-3    -> "0x0000000f"
+//	PUs 64-67  -> "0x0000000f,,0x0"
+//	PU  200    -> "0x00000100,,,,,,0x0"
+//
+// The previous implementation called strconv.ParseUint(mask, 16, 64) on the whole
+// string, so it failed on every mask with more than one field, and silently left
+// the container unbound. It also could not represent a CPU above index 63.
+func parseHwlocMask(mask string) ([]int, error) {
+	s := strings.TrimSpace(mask)
+	if s == "" {
+		return nil, fmt.Errorf("empty cpuset mask")
+	}
+
+	fields := strings.Split(s, ",")
+	nFields := len(fields)
 
 	var cpus []int
-	for i := 0; i < 64; i++ { // Check up to 64 CPUs
-		if (mask & (1 << i)) != 0 {
-			cpus = append(cpus, i)
+	for i, field := range fields {
+		// The leftmost field holds the most significant bits.
+		groupIndex := nFields - 1 - i
+
+		field = strings.TrimSpace(field)
+		if field == "" {
+			// A compressed all-zero group contributes no CPUs.
+			continue
+		}
+
+		digits := field
+		if lower := strings.ToLower(digits); strings.HasPrefix(lower, "0x") {
+			digits = digits[2:]
+		}
+		if digits == "" {
+			return nil, fmt.Errorf("field %d of mask %q has a 0x prefix but no digits", i, mask)
+		}
+
+		value, err := strconv.ParseUint(digits, 16, 64)
+		if err != nil {
+			return nil, fmt.Errorf("field %d of mask %q is not valid hex: %w", i, mask, err)
+		}
+
+		// A single-field mask is unambiguous, so allow the full 64 bits for
+		// compatibility with tools that print one wide word. As soon as there are
+		// multiple fields the positional arithmetic requires exactly 32 bits each.
+		width := 64
+		if nFields > 1 {
+			if value > math.MaxUint32 {
+				return nil, fmt.Errorf("field %d of mask %q exceeds %d bits, so its position is ambiguous", i, mask, hwlocGroupBits)
+			}
+			width = hwlocGroupBits
+		}
+
+		for bit := 0; bit < width; bit++ {
+			if value&(uint64(1)<<uint(bit)) != 0 {
+				cpus = append(cpus, groupIndex*hwlocGroupBits+bit)
+			}
 		}
 	}
 
 	if len(cpus) == 0 {
-		return nil, fmt.Errorf("hex mask %q resulted in an empty CPU set", hexMask)
+		return nil, fmt.Errorf("cpuset mask %q selects no CPUs", mask)
 	}
 
+	sort.Ints(cpus)
 	return cpus, nil
 }
 
-// reverseCPUs reverses a slice of integers in-place.
-func reverseCPUs(s []int) {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
+// orderedCPUList renders CPU IDs as an ordered, explicit list, optionally reversed.
+//
+// This is intentionally NOT passed through cpuset.CPUSet: that type is backed by a
+// map and its String() method sorts, which is why the previous reversal support was
+// a no-op. Order has to survive all the way to the consumer.
+func orderedCPUList(cpus []int, reversed bool) string {
+	ordered := make([]int, len(cpus))
+	copy(ordered, cpus)
+	if reversed {
+		for i, j := 0, len(ordered)-1; i < j; i, j = i+1, j-1 {
+			ordered[i], ordered[j] = ordered[j], ordered[i]
+		}
 	}
-}
 
-// formatCPUListString converts a slice of integer CPU IDs to a CPU list string (e.g., "0-7,15").
-func formatCPUListString(cpus []int) string {
-	// Use the k8s utility to create the properly formatted string.
-	cs := cpuset.New(cpus...)
-	return cs.String()
+	parts := make([]string, len(ordered))
+	for i, cpu := range ordered {
+		parts[i] = strconv.Itoa(cpu)
+	}
+	return strings.Join(parts, ",")
 }
 
 // --- All other plugin methods from the template are UNCHANGED ---

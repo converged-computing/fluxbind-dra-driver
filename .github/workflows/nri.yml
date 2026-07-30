@@ -1,0 +1,64 @@
+name: fluxbind-nri
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l ./cmd)
+          if [ -n "$unformatted" ]; then
+            echo "these files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./cmd/...
+
+      - name: go build
+        run: go build ./cmd/...
+
+      - name: go test
+        run: go test -race -cover ./cmd/...
+
+  verify-hwloc-vectors:
+    name: golden mask vectors match hwloc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install hwloc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y hwloc
+
+      # The mask fixtures encode hwloc's bitmask grammar. Regenerate them from the
+      # real tool and fail if they have drifted, so the parser is always tested
+      # against what hwloc actually emits rather than what we assumed it emits.
+      - name: regenerate and diff
+        run: |
+          python3 hack/gen_hwloc_vectors.py > /tmp/hwloc-masks.tsv
+          if ! diff -u cmd/fluxbind-nri/testdata/hwloc-masks.tsv /tmp/hwloc-masks.tsv; then
+            echo
+            echo "The golden hwloc mask vectors are out of date."
+            echo "Regenerate them with:"
+            echo "  hack/gen_hwloc_vectors.py > cmd/fluxbind-nri/testdata/hwloc-masks.tsv"
+            exit 1
+          fi

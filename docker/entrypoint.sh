@@ -44,6 +44,11 @@ if [[ "$FLUXBIND_QUIET" != "1" ]]
   echo -e "${prefix}: Effective Cpuset Mask:  ${CYAN}$cpuset_mask${RESET}"
   echo -e "${prefix}: Logical CPUs (PUs):     ${BLUE}${logical_cpu_list:-none}${RESET}"
   echo -e "${prefix}: Physical Cores:         ${ORANGE}${physical_core_list:-none}${RESET}"
+  # Ordered CPU list injected by the NRI plugin. The cgroup cpuset is an unordered
+  # set, so any rank-to-CPU ordering (including reverse) arrives here instead.
+  if [[ ! -z "$FLUXBIND_CPU_ORDER" ]]; then
+    echo -e "${prefix}: Ordered CPUs:           ${GREEN}${FLUXBIND_CPU_ORDER}${RESET}"
+  fi
   if [[ ! -z "$CUDA_VISIBLE_DEVICES" ]]; then
     echo -e "${prefix}: CUDA Devices:           ${YELLOW}${CUDA_VISIBLE_DEVICES}${RESET}"
   fi
