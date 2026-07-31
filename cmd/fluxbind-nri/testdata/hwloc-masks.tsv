@@ -1,0 +1,20 @@
+# Golden hwloc cpuset bitmask vectors. DO NOT EDIT BY HAND.
+# Regenerate with: hack/gen_hwloc_vectors.py > cmd/fluxbind-nri/testdata/hwloc-masks.tsv
+# Synthetic topology: pack:2 numa:2 l3:8 core:8 pu:2 (512 PUs)
+# Columns: name <TAB> hwloc mask <TAB> expected cpu list
+single cpu 0	0x00000001	0
+low group	0x0000000f	0-3
+last bit of group 0	0x80000000	31
+first bit of group 1	0x00000001,0x0	32
+straddles group 0 and 1	0x00000001,0x80000000	31-32
+last bit of the old 64 bit limit	0x80000000,0x0	63
+first cpu past the old 64 bit limit	0x00000001,,0x0	64
+straddles the old 64 bit limit	0x00000001,0x80000000,0x0	63-64
+four cores on the second socket	0x0000000f,,0x0	64-67
+high cpu with compressed zero groups	0x00000100,,,,,,0x0	200
+first and last cpu of a 512 pu node	0x80000000,,,,,,,,,,,,,,,0x00000001	0,511
+highest cpu on the node	0x80000000,,,,,,,,,,,,,,,0x0	511
+sparse across sockets	0x00004000,,,,0x00000400,,,,0x00000200,,,,0x00000020	5,137,266,398
+one cpu per group	0x00000001,0x00000001,0x00000001,0x00000001,0x00000001,0x00000001,0x00000001,0x00000001	0,32,64,96,128,160,192,224
+contiguous span crossing groups	0x0000003f,0xf0000000,0x0	60-69
+entire node	0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff	0-511
