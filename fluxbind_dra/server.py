@@ -7,9 +7,9 @@ import grpc
 from fluxbind.manager import NodeResourceManager
 from kubernetes import client, config
 
+import fluxbind_dra.cpuset as cpuset
 import fluxbind_dra.defaults as defaults
 import fluxbind_dra.devices as devices
-import fluxbind_dra.utils as utils
 from fluxbind_dra.proto.dra import dra_pb2, dra_pb2_grpc
 from fluxbind_dra.proto.pluginregistration import api_pb2 as registration_pb2
 from fluxbind_dra.proto.pluginregistration import \
@@ -21,6 +21,27 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 log = logging.getLogger(__name__)
+
+
+# Shape keys that the fluxbind run path honors but the DRA path does not (yet).
+UNSUPPORTED_RESOURCE_KEYS = ("pattern", "reverse")
+UNSUPPORTED_OPTION_KEYS = ("bind",)
+
+
+def warn_unsupported_shape_keys(claim_uid: str, shape: dict) -> list:
+    """
+    Log and return shape keys that are accepted but have no effect on allocation.
+    """
+    ignored = []
+    for resource in shape.get("resources") or []:
+        ignored += [k for k in UNSUPPORTED_RESOURCE_KEYS if k in resource]
+    ignored += [k for k in UNSUPPORTED_OPTION_KEYS if k in (shape.get("options") or {})]
+    if ignored:
+        log.warning(
+            f"Claim {claim_uid}: shape keys {sorted(set(ignored))} are not yet supported "
+            "by the DRA driver and have no effect on the allocated cpuset."
+        )
+    return ignored
 
 
 class DraPluginServicer(dra_pb2_grpc.DRAPluginServicer):
@@ -53,11 +74,9 @@ class DraPluginServicer(dra_pb2_grpc.DRAPluginServicer):
 
     def get_shape_from_claim(self, claim) -> dict:
         """
-        Translates a Kubernetes ResourceClaim into a fluxbind shape.
+        Fetch a ResourceClaim and return the fluxbind shape from its opaque config.
         """
-        log.info(
-            f"Fetching full ResourceClaim '{claim.namespace}/{claim.name}' from API server..."
-        )
+        log.info(f"Fetching ResourceClaim '{claim.namespace}/{claim.name}'...")
         api = self._get_k8s_client()
         claim_obj = api.get_namespaced_custom_object(
             group="resource.k8s.io",
@@ -66,15 +85,64 @@ class DraPluginServicer(dra_pb2_grpc.DRAPluginServicer):
             namespace=claim.namespace,
             plural="resourceclaims",
         )
-
-        # Now we parse the full object we just fetched
-        print(claim_obj)
         opaque_params = claim_obj["spec"]["devices"]["config"][0]["opaque"][
             "parameters"
         ]
-        shape = dict(opaque_params)  # It's already a dict-like structure
-        log.info(f"Successfully parsed shape for claim '{claim.name}': {shape}")
+        shape = dict(opaque_params)
+        log.info(f"Parsed shape for claim '{claim.name}': {shape}")
         return shape
+
+    def prepare_claim(self, claim) -> dra_pb2.NodePrepareResourceResponse:
+        """
+        Reserve resources for one claim and return its prepare response.
+        """
+        try:
+            shape = self.get_shape_from_claim(claim)
+        except Exception as e:
+            return self._claim_error(f"Failed to get shape for claim {claim.uid}: {e}")
+
+        warn_unsupported_shape_keys(claim.uid, shape)
+
+        binding = self.manager.create_reservation(claim.uid, shape)
+        if not binding:
+            return self._claim_error(
+                f"Could not allocate resources for claim {claim.uid}"
+            )
+
+        mask, gpu_string = binding.split(";")
+        try:
+            cpus = cpuset.hwloc_mask_to_cpulist(mask)
+            reason = "allocation produced an empty cpuset"
+        except ValueError as e:
+            cpus, reason = "", str(e)
+        if not cpus:
+            self.manager.release_reservation(claim.uid)
+            return self._claim_error(
+                f"Invalid binding '{mask}' for claim {claim.uid}: {reason}"
+            )
+
+        log.info(
+            f"Binding for claim {claim.uid}: cpus={cpus} mask={mask} gpus={gpu_string}"
+        )
+        device_name = self.cdi_manager.add_device(claim.uid, cpus, mask)
+        cdi_ids = [f"{defaults.PLUGIN_NAME}/shape={device_name}"]
+        if gpu_string != "NONE":
+            cdi_ids.append(f"nvidia.com/gpu={gpu_string}")
+
+        # This Device represents the entire allocation via a cpuset
+        device = dra_pb2.Device(
+            pool_name="shape",
+            device_name="shape",
+            cdi_device_ids=cdi_ids,
+        )
+        return dra_pb2.NodePrepareResourceResponse(devices=[device])
+
+    def _claim_error(self, msg: str) -> dra_pb2.NodePrepareResourceResponse:
+        """
+        Log and return a failed prepare response for one claim.
+        """
+        log.error(msg)
+        return dra_pb2.NodePrepareResourceResponse(error=msg)
 
     def NodePrepareResources(self, request, context):
         log.info(
@@ -87,52 +155,7 @@ class DraPluginServicer(dra_pb2_grpc.DRAPluginServicer):
             self.prepare_resources()
 
         for claim in request.claims:
-            print(claim)
-            try:
-                print(dir(claim))
-                shape = self.get_shape_from_claim(claim)
-            except Exception as e:
-                msg = f"Failed to get shape for claim {claim.uid}: {e}"
-                log.error(msg)
-                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
-                context.set_details(msg)
-                return dra_pb2.NodePrepareResourcesResponse()
-
-            # Call the manager from fluxbind!
-            binding = self.manager.create_reservation(claim.uid, shape)
-
-            if binding:
-                mask, gpu_string = binding.split(";")
-                log.info(
-                    f"Generated binding for claim {claim.uid}: cpuset={mask}, gpus={gpu_string}"
-                )
-
-                # Should we reverse cpus?
-                reversed = any([x.get("reverse") == True for x in shape["resources"]])
-                device_name = self.cdi_manager.add_device(
-                    claim.uid, mask, reversed=reversed
-                )
-                cdi_full_name = f"{defaults.PLUGIN_NAME}/shape={device_name}"
-                cdi_ids = [cdi_full_name]
-                if gpu_string != "NONE":
-                    cdi_ids.append(f"nvidia.com/gpu={gpu_string}")
-
-                # This Device represents the entire allocation via a cpuset
-                device = dra_pb2.Device(
-                    pool_name="shape",
-                    device_name="shape",
-                    cdi_device_ids=cdi_ids,
-                )
-                prepare_response = dra_pb2.NodePrepareResourceResponse(devices=[device])
-                response.claims[claim.uid].CopyFrom(prepare_response)
-
-            else:
-                msg = f"Could not allocate resources for claim {claim.uid}"
-                log.error(msg)
-                context.set_code(grpc.StatusCode.RESOURCE_EXHAUSTED)
-                context.set_details(msg)
-                return dra_pb2.NodePrepareResourcesResponse()
-
+            response.claims[claim.uid].CopyFrom(self.prepare_claim(claim))
         return response
 
     # NodeUnprepareResources does not need to change.

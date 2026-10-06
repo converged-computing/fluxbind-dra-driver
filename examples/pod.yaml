@@ -19,11 +19,10 @@ spec:
         opaque:
           driver: "fluxbind"
           parameters:
-            # Request 4 CPU that are scattered
+            # Request 8 cores (all of their PUs), packed from the lowest free core
             resources:
             - type: "core"
               count: 8
-              pattern: scatter
 ---
 # Pod consumes the pre-created ResourceClaim by name.
 apiVersion: v1

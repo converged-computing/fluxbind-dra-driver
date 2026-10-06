@@ -63,6 +63,17 @@ load-nri:
 .PHONY: build-load
 build-load: build load
 
+.PHONY: test
+test: test-go test-python ## Run all unit tests.
+
+.PHONY: test-go
+test-go: ## Run Go unit tests for the NRI plugin.
+	go test ./...
+
+.PHONY: test-python
+test-python: ## Run Python unit tests (requires hwloc for topology tests).
+	python -m pytest tests
+
 .PHONY: kind
 kind:
 	kind create cluster --config examples/kind-config.yaml
