@@ -6,6 +6,7 @@ require (
 	github.com/containerd/nri v0.10.0
 	k8s.io/apimachinery v0.34.2
 	k8s.io/klog/v2 v2.130.1
+	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 )
 
 require (
@@ -21,5 +22,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230731190214-cbb8c96f2d6d // indirect
 	google.golang.org/grpc v1.57.1 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
-	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
 )

@@ -1,3 +1,7 @@
 .eggs
 dist
 fluxbind_dra.egg-info/
+__pycache__/
+*.pyc
+.pytest_cache/
+/fluxbind-nri

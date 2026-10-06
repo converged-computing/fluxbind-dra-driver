@@ -1,4 +1,6 @@
+import json
 import logging
+import os
 import threading
 
 from kubernetes import client
@@ -8,20 +10,13 @@ import fluxbind_dra.defaults as defaults
 log = logging.getLogger(__name__)
 
 
-# In fluxbind_dra/devices.py
-import json
-import logging
-import os
-
-log = logging.getLogger(__name__)
-
-
 class CDIManager:
     """
     Manages the dynamic CDI specification file in a thread-safe manner.
     """
 
-    def __init__(self):
+    def __init__(self, spec_path: str = defaults.CDI_SPEC_PATH):
+        self.spec_path = spec_path
         self._lock = threading.Lock()
         self._initialize_spec_file()
 
@@ -30,9 +25,9 @@ class CDIManager:
         Ensure a base spec file exists on startup.
         """
         with self._lock:
-            log.info(f"Initializing CDI specification at {defaults.CDI_SPEC_PATH}...")
-            os.makedirs(os.path.dirname(defaults.CDI_SPEC_PATH), exist_ok=True)
-            if not os.path.exists(defaults.CDI_SPEC_PATH):
+            log.info(f"Initializing CDI specification at {self.spec_path}...")
+            os.makedirs(os.path.dirname(self.spec_path), exist_ok=True)
+            if not os.path.exists(self.spec_path):
                 base_spec = {
                     "cdiVersion": "0.6.0",
                     "kind": f"{defaults.PLUGIN_NAME}/shape",
@@ -44,20 +39,21 @@ class CDIManager:
         """
         Reads and parses the current CDI spec file.
         """
-        with open(defaults.CDI_SPEC_PATH, "r") as f:
+        with open(self.spec_path, "r") as f:
             return json.load(f)
 
     def _write_spec(self, spec: dict):
         """
         Writes the spec object to the file.
         """
-        with open(defaults.CDI_SPEC_PATH, "w") as f:
+        tmp_path = f"{self.spec_path}.tmp"
+        with open(tmp_path, "w") as f:
             json.dump(spec, f, indent=2)
+        os.replace(tmp_path, self.spec_path)
 
-    def add_device(self, claim_uid: str, cpuset: str, reversed: bool = False):
+    def add_device(self, claim_uid: str, cpus: str, mask: str) -> str:
         """
-        Adds a new device entry to the CDI spec for a specific claim.
-        This is called by NodePrepareResources.
+        Add or replace the CDI device for a claim, injecting its cpulist and mask.
         """
         with self._lock:
             log.info(f"Adding device for claim {claim_uid} to CDI spec...")
@@ -65,18 +61,17 @@ class CDIManager:
 
             device_name = f"claim-{claim_uid}"
 
-            # This is the environment variable that will be injected into the container.
-            # NRI will have a hook that can find this envar and apply it.
-            envars = [f"{defaults.CDI_ENVVAR_PREFIX}={cpuset}"]
-            if reversed:
-                envars.append(f"{defaults.CDI_ENVVAR_PREFIX}_REVERSED=yes")
+            # The NRI plugin reads the cpulist from the container env and applies it.
+            envars = [
+                f"{defaults.CDI_CPUS_ENVVAR}={cpus}",
+                f"{defaults.CDI_CPUSET_ENVVAR}={mask}",
+            ]
 
             # Remove any stale entry for this device name (idempotency)
             spec["devices"] = [
                 d for d in spec["devices"] if d.get("name") != device_name
             ]
 
-            # edit the container's linux cgroup resources.
             new_device = {
                 "name": device_name,
                 "containerEdits": {
