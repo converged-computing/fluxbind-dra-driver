@@ -198,7 +198,14 @@ spec:
           mountPath: /run/fluxbind
         - name: cdi-dir
           mountPath: /var/run/cdi
+        # Reservation state must outlive the container or restarts double-allocate.
+        - name: state-dir
+          mountPath: /var/lib/fluxbind-dra
       volumes:
+      - name: state-dir
+        hostPath:
+          path: /var/lib/fluxbind-dra
+          type: DirectoryOrCreate
       - name: device-plugin
         hostPath:
           path: /var/lib/kubelet/plugins
